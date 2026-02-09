@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/router"; // Pakai next/router karena kamu di folder 'pages'
-import { database } from "../lib/db"; // Sesuaikan path folder lib
+import { database } from "../lib/firebaseConfig"; // Sesuaikan path folder lib
 import { ref, onValue, update } from "firebase/database";
 
 export default function Dashboard() {

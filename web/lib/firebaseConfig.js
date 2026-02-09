@@ -1,27 +1,20 @@
-import mongoose from 'mongoose';
+// File: web/lib/firebaseConfig.js
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getDatabase } from "firebase/database";
 
-const MONGODB_URI = process.env.MONGODB_URI;
+const firebaseConfig = {
+  // Masukkan API KEY kamu yang panjang itu di sini
+  apiKey: "AIzaSy...", 
+  authDomain: "project-bumdes-...",
+  databaseURL: "https://project-bumdes-....firebaseio.com",
+  projectId: "project-bumdes-...",
+  storageBucket: "...",
+  messagingSenderId: "...",
+  appId: "..."
+};
 
-if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI environment variable');
-}
+// Singleton pattern biar gak error "App already initialized"
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const database = getDatabase(app);
 
-let cached = global.mongoose;
-
-if (!cached) {
-  cached = global.mongoose = { conn: null, promise: null };
-}
-
-async function dbConnect() {
-  if (cached.conn) return cached.conn;
-
-  if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI).then((mongoose) => {
-      return mongoose;
-    });
-  }
-  cached.conn = await cached.promise;
-  return cached.conn;
-}
-
-export default dbConnect;
+export { database };
