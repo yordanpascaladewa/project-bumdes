@@ -1,4 +1,4 @@
-import { database } from "../../../lib/firebaseConfig"; 
+import { database } from "../../lib/fire";; 
 import { ref, get, update } from "firebase/database";
 
 export default async function handler(req, res) {
