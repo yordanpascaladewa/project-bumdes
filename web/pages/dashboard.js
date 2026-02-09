@@ -50,7 +50,7 @@ export default function Dashboard() {
             <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">🦆</div>
             <div>
               <h1 className="text-lg font-black text-white leading-tight tracking-tight">Smart Feeder</h1>
-              <p className="text-[9px] uppercase tracking-[0.2em] text-indigo-400 font-bold">Electrical Engineering</p>
+              <p className="text-[9px] uppercase tracking-[0.2em] text-indigo-400 font-bold">Peternakan Bumdes</p>
             </div>
           </div>
           <button 
@@ -64,7 +64,7 @@ export default function Dashboard() {
         {/* STATUS KONEKSI ESP32 */}
         <div className={`relative overflow-hidden p-6 rounded-[2rem] mb-6 border-b-4 transition-all duration-500 shadow-2xl ${isOnline ? 'bg-emerald-500/10 border-emerald-500 shadow-emerald-500/10' : 'bg-rose-500/10 border-rose-500 shadow-rose-500/10'}`}>
           <div className="flex flex-col items-center relative z-10">
-            <span className="text-[10px] font-bold uppercase tracking-[0.3em] opacity-50 mb-2">System Status</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.3em] opacity-50 mb-2">STATUS SISTEM</span>
             <h2 className="text-3xl font-black tracking-tighter flex items-center gap-3">
               {isOnline ? "ALAT ONLINE" : "ALAT OFFLINE"}
               <span className={`w-3 h-3 rounded-full animate-pulse ${isOnline ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
