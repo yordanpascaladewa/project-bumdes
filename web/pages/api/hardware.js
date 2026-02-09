@@ -1,37 +1,47 @@
-import dbConnect from '../../lib/db';
-import Alat from '../../models/Alat';
+import { database } from "../../../lib/firebaseConfig"; 
+import { ref, get, update, set } from "firebase/database";
 
 export default async function handler(req, res) {
-  await dbConnect();
+  if (req.method !== 'POST') {
+    return res.status(405).json({ message: 'Method Not Allowed' });
+  }
 
-  if (req.method === 'POST') {
+  try {
     const { id, pakan_pagi, pakan_sore } = req.body;
 
-    // 1. Update Status dari Laporan ESP32
-    let alat = await Alat.findOneAndUpdate(
-      { id_alat: id },
-      { 
-        status_koneksi: "ONLINE",
-        terakhir_checkin: new Date(),
-        pakan_pagi: pakan_pagi,
-        pakan_sore: pakan_sore
-      },
-      { new: true, upsert: true } // Buat baru kalau belum ada
-    );
+    // --- BAGIAN INI YANG KEMARIN KITA LEWATKAN ---
+    // 1. Catat "Last Seen" (Waktu Terakhir Online) ke Firebase
+    // Kita simpan timestamp server saat ini
+    await update(ref(database, 'status_alat'), { 
+      online: true, 
+      last_seen: Date.now() // Ini jam detik ini (ms)
+    });
+    // ----------------------------------------------
 
-    // 2. Cek apakah ada perintah Manual dari Web?
-    const responseData = {
-      perintah: alat.perintah_manual ? "MANUAL" : "STANDBY",
-      durasi: alat.durasi_manual || 0
-    };
+    // 2. Cek apakah ada perintah MANUAL dari Firebase?
+    const perintahRef = ref(database, "perintah");
+    const snapshot = await get(perintahRef);
+    const data = snapshot.val();
 
-    // 3. Kalau perintah sudah dikirim, reset di DB biar ga dieksekusi 2x
-    if (alat.perintah_manual) {
-      await Alat.findOneAndUpdate({ id_alat: id }, { perintah_manual: false, durasi_manual: 0 });
+    if (data && data.beri_pakan_sekarang === true) {
+      // ADA PERINTAH! Kirim ke ESP32
+      res.status(200).json({
+        perintah: "MANUAL",
+        durasi: 24.6 
+      });
+
+      // Matikan tombol manual di database biar gak looping
+      await update(perintahRef, { beri_pakan_sekarang: false });
+    } else {
+      // GAK ADA PERINTAH, Standby aja
+      res.status(200).json({
+        perintah: "STANDBY",
+        durasi: 0
+      });
     }
 
-    res.status(200).json(responseData);
-  } else {
-    res.status(405).json({ message: "Method not allowed" });
+  } catch (error) {
+    console.error("Firebase Error:", error);
+    res.status(500).json({ error: "Gagal cek database" });
   }
 }

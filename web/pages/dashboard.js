@@ -1,151 +1,233 @@
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import axios from 'axios';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/router"; // Pakai next/router karena kamu di folder 'pages'
+import { database } from "../lib/firebaseConfig"; // Sesuaikan path folder lib
+import { ref, onValue, update } from "firebase/database";
 
 export default function Dashboard() {
-  const [data, setData] = useState(null);
-  const [manualDurasi, setManualDurasi] = useState(24.6); // Durasi presisi sesuai permintaan
-  const [isSending, setIsSending] = useState(false);
   const router = useRouter();
+  
+  // --- STATE VARIABLES ---
+  const [isOnline, setIsOnline] = useState(false);
+  const [lastSeen, setLastSeen] = useState(0);
+  const [manualDuration, setManualDuration] = useState("24,6");
+  const [loading, setLoading] = useState(false);
+  
+  // State untuk Jadwal
+  const [jadwal, setJadwal] = useState({
+    pakan_pagi: "09:00",
+    pakan_sore: "15:00",
+  });
 
-  // Proteksi Halaman & Auto Refresh Data
+  // --- 1. CEK STATUS ONLINE/OFFLINE ---
   useEffect(() => {
-    if (!localStorage.getItem('isLoggedIn')) router.push('/');
+    // A. DENGARKAN DATA DARI FIREBASE
+    const statusRef = ref(database, 'status_alat/last_seen');
+    const unsubscribeStatus = onValue(statusRef, (snapshot) => {
+      const timestamp = snapshot.val();
+      if (timestamp) {
+        setLastSeen(timestamp);
+        checkOnlineStatus(timestamp);
+      }
+    });
+
+    // B. DENGARKAN CONFIG JADWAL
+    const configRef = ref(database, 'config');
+    const unsubscribeConfig = onValue(configRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setJadwal({
+          pakan_pagi: data.pakan_pagi || "09:00",
+          pakan_sore: data.pakan_sore || "15:00",
+        });
+      }
+    });
+
+    // C. INTERVAL LOKAL
+    const interval = setInterval(() => {
+      checkOnlineStatus(lastSeen);
+    }, 1000);
+
+    return () => {
+      unsubscribeStatus();
+      unsubscribeConfig();
+      clearInterval(interval);
+    };
+  }, [lastSeen]);
+
+  // Fungsi Logika Online (HAPUS BAGIAN ': number')
+  const checkOnlineStatus = (timestamp) => {
+    const now = Date.now();
+    const diff = now - timestamp;
     
-    const interval = setInterval(fetchData, 2000); // Sinkronisasi tiap 2 detik
-    return () => clearInterval(interval);
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      const res = await axios.get('/api/kontrol');
-      setData(res.data);
-    } catch (err) { 
-      console.error("Gagal mengambil data database", err); 
+    // Jika selisih waktu < 15 detik, dianggap ONLINE
+    if (diff < 15000 && timestamp !== 0) {
+      setIsOnline(true);
+    } else {
+      setIsOnline(false);
     }
   };
 
-  const kirimManual = async () => {
-    setIsSending(true);
-    try {
-      // Mengirim perintah MAJU ke API
-      await axios.post('/api/kontrol', { perintah: "MAJU", durasi: manualDurasi });
-      alert(`🚀 SIKLUS PAKAN DIMULAI!\nAktuator akan membuka ${manualDurasi} detik lalu menutup kembali.`);
-    } catch (err) { 
-      alert("Koneksi server terputus!"); 
+  // --- 2. FUNGSI TOMBOL MANUAL ---
+  const handleManualFeed = async () => {
+    setLoading(true);
+
+    // SOLUSI KOMA: Ganti koma jadi titik
+    const durasiFix = parseFloat(manualDuration.replace(',', '.'));
+
+    if (isNaN(durasiFix) || durasiFix <= 0) {
+      alert("Masukkan durasi yang benar!");
+      setLoading(false);
+      return;
     }
-    setIsSending(false);
+
+    try {
+      await update(ref(database, 'perintah'), {
+        beri_pakan_sekarang: true,
+        durasi: durasiFix 
+      });
+
+      alert(`Perintah dikirim! Alat akan buka selama ${durasiFix} detik.`);
+    } catch (error) {
+      console.error(error);
+      alert("Gagal mengirim perintah.");
+    }
+
+    setTimeout(() => {
+      setLoading(false);
+    }, 2000);
   };
 
-  // Logika Cek Online (Toleransi 1 Menit)
-  const isOnline = data?.terakhir_checkin && (new Date() - new Date(data.terakhir_checkin) < 60000);
+  // --- 3. FUNGSI SIMPAN JADWAL ---
+  const handleSaveJadwal = async () => {
+    try {
+      await update(ref(database, 'config'), {
+        pakan_pagi: jadwal.pakan_pagi,
+        pakan_sore: jadwal.pakan_sore
+      });
+      alert("Jadwal Berhasil Disimpan!");
+    } catch (error) {
+      alert("Gagal simpan jadwal.");
+    }
+  };
+
+  // --- 4. LOGOUT ---
+  const handleLogout = () => {
+    router.push('/'); 
+  };
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-200 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
-      <div className="max-w-lg mx-auto">
+    <div className="min-h-screen bg-slate-900 text-white p-4 md:p-8 font-sans">
+      <div className="max-w-md mx-auto space-y-6">
         
-        {/* HEADER APLIKASI */}
-        <div className="flex justify-between items-center mb-8 bg-slate-800/50 p-4 rounded-2xl border border-slate-700 backdrop-blur-md shadow-xl">
+        {/* HEADER */}
+        <div className="flex justify-between items-center bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
           <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-xl shadow-lg shadow-indigo-500/20">🦆</div>
+            <div className="bg-blue-600 p-2 rounded-lg">
+              🦆
+            </div>
             <div>
-              <h1 className="text-lg font-black text-white leading-tight tracking-tight">Smart Feeder</h1>
-              <p className="text-[9px] uppercase tracking-[0.2em] text-indigo-400 font-bold">Peternakan Bumdes</p>
+              <h1 className="font-bold text-lg leading-tight">Smart Feeder</h1>
+              <p className="text-xs text-blue-400 font-semibold tracking-wider">PETERNAKAN BUMDES</p>
             </div>
           </div>
           <button 
-            onClick={() => {localStorage.removeItem('isLoggedIn'); router.push('/')}} 
-            className="text-red-400 text-[10px] font-black border border-red-500/30 px-4 py-2 rounded-xl hover:bg-red-500/10 transition-all uppercase tracking-widest"
-          >
-            Logout
+            onClick={handleLogout}
+            className="text-xs font-bold text-red-400 border border-red-900 hover:bg-red-900/50 px-3 py-1 rounded transition">
+            LOGOUT
           </button>
         </div>
 
-        {/* STATUS KONEKSI ESP32 */}
-        <div className={`relative overflow-hidden p-6 rounded-[2rem] mb-6 border-b-4 transition-all duration-500 shadow-2xl ${isOnline ? 'bg-emerald-500/10 border-emerald-500 shadow-emerald-500/10' : 'bg-rose-500/10 border-rose-500 shadow-rose-500/10'}`}>
-          <div className="flex flex-col items-center relative z-10">
-            <span className="text-[10px] font-bold uppercase tracking-[0.3em] opacity-50 mb-2">STATUS SISTEM</span>
-            <h2 className="text-3xl font-black tracking-tighter flex items-center gap-3">
+        {/* STATUS CARD */}
+        <div className={`p-8 rounded-2xl text-center shadow-2xl transition-all duration-500 border-2 ${isOnline ? 'bg-green-900/20 border-green-500/50' : 'bg-red-900/20 border-red-500/50'}`}>
+          <p className="text-xs font-bold tracking-[0.2em] text-slate-400 mb-2 uppercase">Status Sistem</p>
+          <div className="flex justify-center items-center gap-3">
+            <span className={`h-4 w-4 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+            <h2 className={`text-3xl font-black ${isOnline ? 'text-green-400' : 'text-red-500'}`}>
               {isOnline ? "ALAT ONLINE" : "ALAT OFFLINE"}
-              <span className={`w-3 h-3 rounded-full animate-pulse ${isOnline ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
             </h2>
-            {data?.terakhir_checkin && (
-              <p className="text-[9px] mt-2 font-mono opacity-40 uppercase">Last Signal: {new Date(data.terakhir_checkin).toLocaleTimeString()}</p>
-            )}
           </div>
+          {isOnline && <p className="text-xs text-green-300/50 mt-2">Terhubung ke Server</p>}
         </div>
 
-        {/* INFO PANEL SAFETY */}
-        <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl mb-8 flex items-start gap-3">
-          <span className="text-lg">⚠️</span>
-          <p className="text-[10px] text-amber-200/80 leading-relaxed font-medium">
-            <strong>SAFETY PROTOCOL:</strong> Aktuator akan melakukan "Safety Run" (Mundur 30 detik) saat perangkat dinyalakan untuk mencegah tabrakan plat pakan.
+        {/* WARNING BOX */}
+        <div className="bg-yellow-900/30 border border-yellow-600/30 p-3 rounded-lg flex gap-3 items-start">
+          <span className="text-yellow-500 text-xl">⚠️</span>
+          <p className="text-xs text-yellow-200/80 leading-relaxed">
+            <span className="font-bold text-yellow-500">SAFETY PROTOCOL:</span> Saat alat baru menyala, aktuator akan Mundur (30s) lalu Maju (24.6s) otomatis untuk kalibrasi.
           </p>
         </div>
 
-        {/* KONTROL UTAMA */}
-        <div className="bg-slate-800/80 p-8 rounded-[2.5rem] border border-slate-700 shadow-2xl backdrop-blur-sm relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-6 opacity-5 text-4xl font-black italic">MANUAL</div>
+        {/* MANUAL CONTROL */}
+        <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
+          <h3 className="text-center font-bold text-slate-500 text-sm mb-6 uppercase tracking-widest">Kontrol Manual</h3>
           
-          <h3 className="text-center font-bold text-[10px] uppercase tracking-[0.2em] mb-6 text-slate-500">Durasi Buka Plat (Detik)</h3>
-          
-          <div className="relative mb-8">
+          <div className="mb-6 relative">
+            <label className="text-xs text-slate-400 absolute -top-2 left-3 bg-slate-800 px-1">Durasi Buka (Detik)</label>
             <input 
-              type="number" 
-              step="0.1"
-              value={manualDurasi} 
-              onChange={(e) => setManualDurasi(e.target.value)} 
-              className="w-full bg-slate-900 border-2 border-slate-700 focus:border-indigo-500 p-6 rounded-2xl text-white font-black text-center text-5xl outline-none transition-all shadow-inner" 
+              type="text" 
+              value={manualDuration}
+              onChange={(e) => setManualDuration(e.target.value)}
+              className="w-full bg-slate-900 text-center text-4xl font-bold py-4 rounded-xl border-2 border-slate-600 focus:border-blue-500 focus:outline-none text-white transition placeholder-slate-600"
+              placeholder="0.0"
             />
-            <div className="absolute inset-y-0 right-6 flex items-center pointer-events-none">
-              <span className="text-xs font-bold text-slate-600 uppercase">Sec</span>
+            <span className="absolute right-4 top-6 text-slate-500 font-bold text-sm">SEC</span>
+          </div>
+
+          <button 
+            onClick={handleManualFeed}
+            disabled={loading || !isOnline}
+            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transform active:scale-95 transition-all
+              ${loading 
+                ? 'bg-slate-600 cursor-not-allowed text-slate-400' 
+                : isOnline 
+                  ? 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white border-b-4 border-blue-900' 
+                  : 'bg-slate-700 cursor-not-allowed text-slate-500'
+              }
+            `}>
+            {loading ? "SEDANG MEMPROSES..." : "KIRIM PAKAN SEKARANG"}
+          </button>
+          {!isOnline && <p className="text-center text-xs text-red-400 mt-2">Alat offline, tombol dinonaktifkan.</p>}
+        </div>
+
+        {/* JADWAL SETTINGS */}
+        <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl">
+          <h3 className="text-center font-bold text-slate-500 text-sm mb-6 uppercase tracking-widest">Pengaturan Jadwal</h3>
+          
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Pakan Pagi</label>
+              <input 
+                type="time" 
+                value={jadwal.pakan_pagi}
+                onChange={(e) => setJadwal({...jadwal, pakan_pagi: e.target.value})}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-center font-bold focus:border-blue-500 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Pakan Sore</label>
+              <input 
+                type="time" 
+                value={jadwal.pakan_sore}
+                onChange={(e) => setJadwal({...jadwal, pakan_sore: e.target.value})}
+                className="w-full bg-slate-900 border border-slate-600 rounded-lg p-2 text-center font-bold focus:border-blue-500 outline-none"
+              />
             </div>
           </div>
 
           <button 
-            onClick={kirimManual} 
-            disabled={!isOnline || isSending} 
-            className={`w-full py-6 rounded-2xl font-black text-xl tracking-tight transition-all active:scale-95 shadow-2xl flex items-center justify-center gap-3
-              ${isOnline && !isSending 
-                ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/30' 
-                : 'bg-slate-700 text-slate-500 cursor-not-allowed grayscale'}`}
-          >
-            {isSending ? (
-              <>
-                <div className="w-5 h-5 border-4 border-slate-400 border-t-white rounded-full animate-spin"></div>
-                PROSES...
-              </>
-            ) : (
-              "KIRIM PAKAN SEKARANG"
-            )}
+            onClick={handleSaveJadwal}
+            className="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 rounded-lg text-sm transition border border-slate-600">
+            SIMPAN JADWAL
           </button>
         </div>
 
-        {/* WATERMARK KKN UNDIP 2026 */}
-        <div className="mt-20 text-center space-y-4">
-          <p className="text-slate-600 text-[9px] font-bold uppercase tracking-[0.4em]">
-            Made with <span className="text-rose-500 animate-pulse">❤️</span> by
-          </p>
-          
-          <div className="inline-block relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500/20 to-blue-500/20 rounded-2xl blur-md"></div>
-            <div className="relative bg-slate-800/40 py-5 px-8 rounded-2xl border border-slate-700/50 backdrop-blur-md">
-              <h4 className="text-white text-[11px] font-black tracking-[0.2em] uppercase leading-none mb-2">
-                Tim 1 Kelompok 71 KKN UNDIP 2026
-              </h4>
-              <p className="text-indigo-400 text-[9px] font-bold uppercase tracking-wider mb-1">
-                Desa Ponowareng
-              </p>
-              <p className="text-slate-500 text-[8px] font-medium uppercase tracking-tight">
-                Kec. Tulis • Kab. Batang
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-8 opacity-20">
-            <p className="text-[8px] font-mono text-slate-500 uppercase tracking-widest">
-              &copy; 2026 • Universitas Diponegoro
-            </p>
+        {/* FOOTER */}
+        <div className="text-center mt-8 pb-4 opacity-50">
+          <p className="text-[10px] tracking-[2px] font-bold text-blue-400 uppercase mb-1">Made with ❤️ by</p>
+          <div className="bg-slate-800/50 inline-block px-4 py-2 rounded-lg border border-slate-700/50">
+            <p className="text-xs font-bold text-white">TIM 1 KELOMPOK 71 KKN UNDIP 2026</p>
+            <p className="text-[10px] text-slate-400 mt-1">DESA PONOWARENG</p>
+            <p className="text-[8px] text-slate-500">KEC. TULIS • KAB. BATANG</p>
           </div>
         </div>
 
